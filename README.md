@@ -39,22 +39,26 @@ The server will run on `http://localhost:5000`
 ## 🌐 Vercel Deployment
 
 ### Prerequisites
+
 - Install Vercel CLI: `npm i -g vercel`
 - Have a Vercel account
 
 ### Deployment Steps
 
 1. **Login to Vercel**
+
    ```bash
    vercel login
    ```
 
 2. **Deploy**
+
    ```bash
    vercel
    ```
 
 3. **Set Environment Variables in Vercel Dashboard**
+
    - Go to your project settings on Vercel
    - Add all environment variables from your `.env` file
    - Update `GOOGLE_CALLBACK_URL` to use your Vercel domain
@@ -82,6 +86,7 @@ The server will run on `http://localhost:5000`
 ## 🔗 Frontend Integration
 
 After successful authentication, the user is redirected to:
+
 ```
 ${FRONTEND_URL}/auth/success?token=${jwt_token}
 ```
