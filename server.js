@@ -14,6 +14,14 @@ app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
 
+// Compute cookie options based on environment
+const IS_PROD = process.env.NODE_ENV === "production";
+const FORCE_INSECURE =
+  String(process.env.FORCE_INSECURE_COOKIES || "false").toLowerCase() ===
+  "true";
+const cookieSecure = IS_PROD && !FORCE_INSECURE; // require HTTPS in prod unless forced insecure
+const cookieSameSite = IS_PROD ? (cookieSecure ? "none" : "lax") : "lax";
+
 // 🔐 Session setup (required by Passport for OAuth flow)
 app.use(
   session({
@@ -21,8 +29,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production", // HTTPS only in production
+      secure: cookieSecure, // HTTPS only in production unless overridden
       httpOnly: true,
+      sameSite: cookieSameSite,
       maxAge: 10 * 60 * 1000, // 10 minutes (just for OAuth flow)
     },
   })
@@ -79,14 +88,14 @@ app.get(
     // Send token via secure HTTP-only cookie
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // HTTPS only in production
-      sameSite: "lax",
+      secure: cookieSecure,
+      sameSite: cookieSameSite,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     // Redirect to frontend success page
-    // Frontend can call /auth/verify to get user data
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+    // Frontend can call /auth/verify to get user data; also include token for fallback
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
   }
 );
 
