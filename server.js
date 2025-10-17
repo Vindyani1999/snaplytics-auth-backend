@@ -3,24 +3,22 @@ import passport from "passport";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import session from "express-session";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
-app.use(cookieParser());
-app.use(express.json());
 
-// Compute cookie options based on environment
-const IS_PROD = process.env.NODE_ENV === "production";
-const FORCE_INSECURE =
-  String(process.env.FORCE_INSECURE_COOKIES || "false").toLowerCase() ===
-  "true";
-const cookieSecure = IS_PROD && !FORCE_INSECURE; // require HTTPS in prod unless forced insecure
-const cookieSameSite = IS_PROD ? (cookieSecure ? "none" : "lax") : "lax";
+// Enable CORS for your frontend
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+  })
+);
+
+app.use(express.json());
 
 // 🔐 Session setup (required by Passport for OAuth flow)
 app.use(
@@ -28,14 +26,10 @@ app.use(
     secret: process.env.JWT_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      secure: cookieSecure, // HTTPS only in production unless overridden
-      httpOnly: true,
-      sameSite: cookieSameSite,
-      maxAge: 10 * 60 * 1000, // 10 minutes (just for OAuth flow)
-    },
+    cookie: { maxAge: 10 * 60 * 1000 }, // 10 mins for OAuth session only
   })
 );
+
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -48,11 +42,10 @@ passport.use(
       callbackURL: process.env.GOOGLE_CALLBACK_URL,
     },
     (accessToken, refreshToken, profile, done) => {
-      // Extract user info from Google profile
       const user = {
         id: profile.id,
         name: profile.displayName,
-        email: profile.emails[0].value,
+        email: profile.emails?.[0]?.value,
         picture: profile.photos?.[0]?.value,
       };
       done(null, user);
@@ -64,16 +57,19 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
 // 🌐 ROUTES
+
+// 1️⃣ Start OAuth login
 app.get(
   "/auth/google",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
+// 2️⃣ OAuth callback
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/auth/failure" }),
   (req, res) => {
-    // Generate JWT token with user info
+    // Generate JWT
     const token = jwt.sign(
       {
         id: req.user.id,
@@ -82,32 +78,22 @@ app.get(
         picture: req.user.picture,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" } // Token valid for 7 days
+      { expiresIn: "7d" }
     );
 
-    // Send token via secure HTTP-only cookie
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: cookieSecure,
-      sameSite: cookieSameSite,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
-
-    // Redirect to frontend success page
-    // Frontend can call /auth/verify to get user data; also include token for fallback
+    // Redirect to frontend with token in URL
     res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
   }
 );
 
+// 3️⃣ Auth failure
 app.get("/auth/failure", (req, res) => {
   res.status(401).json({ success: false, message: "Authentication failed" });
 });
 
-// Verify JWT token and return user data
+// 4️⃣ Verify token (optional, backend can verify token sent via Authorization header)
 app.get("/auth/verify", (req, res) => {
-  // Check for token in Authorization header or cookie
-  const token =
-    req.headers.authorization?.split(" ")[1] || req.cookies.auth_token;
+  const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
     return res.status(401).json({ valid: false, message: "Token missing" });
@@ -121,9 +107,9 @@ app.get("/auth/verify", (req, res) => {
   }
 });
 
-// Logout endpoint
+// 5️⃣ Logout (frontend just clears localStorage)
 app.post("/auth/logout", (req, res) => {
-  res.clearCookie("auth_token");
+  req.logout(() => {});
   res.json({ success: true, message: "Logged out successfully" });
 });
 
